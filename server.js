@@ -5,15 +5,12 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
-// 公网部署必须用平台分配的端口，本地默认3001
 const PORT = process.env.PORT || 3001;
 
-// 创建HTTP服务
 const server = http.createServer(app);
-// 初始化Socket.io，适配公网跨域
 const io = new Server(server, {
   cors: {
-    origin: "*", // 允许所有前端地址访问，部署用
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -21,7 +18,6 @@ const io = new Server(server, {
 // 存储房间信息
 const rooms = {};
 
-// Socket连接核心逻辑
 io.on('connection', (socket) => {
   console.log(`玩家连接成功，ID：${socket.id}`);
 
@@ -47,21 +43,17 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // 分配座位号
     const newSeatIndex = room.players.length;
     room.players.push({ id: socket.id, seatIndex: newSeatIndex });
     socket.join(roomId);
 
-    // 通知加入者
     socket.emit('playerJoined', { 
       mySeatIndex: newSeatIndex,
       count: room.players.length
     });
 
-    // 通知房主
     io.to(room.host).emit('playerJoined', { count: room.players.length });
 
-    // 同步已有配置和牌局状态
     if (room.config) socket.emit('syncConfig', room.config);
     if (room.gameState) socket.emit('syncGameState', room.gameState);
     
@@ -85,11 +77,25 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('syncGameState', newState);
   });
 
-  // 5. 同步翻牌动作
+  // 5. 翻牌事件（🔥 新增权限校验）
   socket.on('flipCard', (roomId, cardInfo) => {
     const room = rooms[roomId];
     if (!room) return;
-    io.to(roomId).emit('cardFlipped', cardInfo);
+
+    // 权限校验
+    const isHost = socket.id === room.host;
+    const player = room.players.find(p => p.id === socket.id);
+    const isMyCard = player && cardInfo.ownerSeatIndex === player.seatIndex;
+    const isCommunityCard = cardInfo.ownerSeatIndex === undefined;
+
+    // 只有房主 或 翻自己的牌/公共牌，才允许广播
+    if (isHost || isMyCard || isCommunityCard) {
+      io.to(roomId).emit('cardFlipped', cardInfo);
+      console.log(`房间${roomId}卡牌${cardInfo.cardId}翻牌同步成功`);
+    } else {
+      socket.emit('error', '你没有权限翻这张牌！');
+      console.log(`玩家${socket.id}尝试无权限翻牌，已拦截`);
+    }
   });
 
   // 玩家断开连接
