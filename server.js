@@ -3,6 +3,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+// ================ 【新增1】引入 Agora Token 生成库 ================
+const { RtcTokenBuilder, RtcRole } = require('agora-token');
+
 const app = express();
 app.use(cors());
 const PORT = process.env.PORT || 3001;
@@ -15,8 +18,44 @@ const io = new Server(server, {
   }
 });
 
+// ================ 【新增2】填写你的声网密钥（必填！） ================
+const APP_ID = 'b36db247620e4c78a58d146a3c602f93';
+const APP_CERTIFICATE = '6a900e035ae949b396dca185d08c632a';
+// ==============================================================
+
 // 存储房间信息
 const rooms = {};
+
+// ================ 【新增3】生成 Agora 语音Token 函数 ================
+function generateAgoraToken(channelName, uid) {
+  const expireTime = 86400; // 24小时有效期
+  const currentTime = Math.floor(Date.now() / 1000);
+  const privilegeExpireTime = currentTime + expireTime;
+
+  return RtcTokenBuilder.buildTokenWithUid(
+    APP_ID,
+    APP_CERTIFICATE,
+    channelName, // 房间号（和游戏房间一致）
+    uid,        // 用户ID
+    RtcRole.PUBLISHER, // 可发言权限
+    privilegeExpireTime
+  );
+}
+
+// ================ 【新增4】前端获取语音Token 接口 ================
+app.get('/get-voice-token', (req, res) =>
+{
+  const { roomId, uid } = req.query;
+  if (!roomId || !uid) {
+    return res.status(400).json({ error: '缺少房间号/用户ID' });
+  }
+  const token = generateAgoraToken(roomId, uid);
+  res.json({
+    appId: APP_ID,
+    token: token,
+    roomId: roomId
+  });
+});
 
 io.on('connection', (socket) => {
   console.log(`玩家连接成功，ID：${socket.id}`);
@@ -185,4 +224,5 @@ io.on('connection', (socket) => {
 // 启动服务
 server.listen(PORT, () => {
   console.log(`✅ 后端服务已启动！运行端口：${PORT}`);
+  console.log(`✅ 语音Token接口已就绪：http://localhost:${PORT}/get-voice-token`);
 });
