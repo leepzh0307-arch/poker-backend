@@ -6,7 +6,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "agora-token": "^2.0.5",
+    "agora-access-token": "^2.0.4",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^4.19.2",
