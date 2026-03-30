@@ -3,8 +3,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-// ================ 【新增1】引入 Agora Token 生成库 ================
-const { RtcTokenBuilder, RtcRole } = require('agora-token');
+// ================ 引入 Agora Token 生成库 ================
+// 务必执行: npm install agora-access-token
+const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 
 const app = express();
 app.use(cors());
@@ -18,44 +19,42 @@ const io = new Server(server, {
   }
 });
 
-// ================ 【新增2】填写你的声网密钥（必填！） ================
+// ================ 填写的声网密钥 ================
 const APP_ID = 'b36db247620e4c78a58d146a3c602f93';
 const APP_CERTIFICATE = '6a900e035ae949b396dca185d08c632a';
-// ==============================================================
+// ==============================================
 
-// 存储房间信息
-const rooms = {};
+// 生成 Agora 语音Token 的接口
+app.get('/agora-token', (req, res) => {
+  const channelName = req.query.channelName;
+  if (!channelName) {
+    return res.status(400).json({ error: '缺少频道名 channelName' });
+  }
 
-// ================ 【新增3】生成 Agora 语音Token 函数 ================
-function generateAgoraToken(channelName, uid) {
+  const uid = 0; 
+  const role = RtcRole.PUBLISHER; 
   const expireTime = 86400; // 24小时有效期
   const currentTime = Math.floor(Date.now() / 1000);
   const privilegeExpireTime = currentTime + expireTime;
 
-  return RtcTokenBuilder.buildTokenWithUid(
-    APP_ID,
-    APP_CERTIFICATE,
-    channelName, // 房间号（和游戏房间一致）
-    uid,        // 用户ID
-    RtcRole.PUBLISHER, // 可发言权限
-    privilegeExpireTime
-  );
-}
-
-// ================ 【新增4】前端获取语音Token 接口 ================
-app.get('/get-voice-token', (req, res) =>
-{
-  const { roomId, uid } = req.query;
-  if (!roomId || !uid) {
-    return res.status(400).json({ error: '缺少房间号/用户ID' });
+  try {
+    const token = RtcTokenBuilder.buildTokenWithUid(
+      APP_ID,
+      APP_CERTIFICATE,
+      channelName,
+      uid,
+      role,
+      privilegeExpireTime
+    );
+    res.json({ token: token });
+  } catch (err) {
+    console.error('Token生成失败:', err);
+    res.status(500).json({ error: 'Token生成失败' });
   }
-  const token = generateAgoraToken(roomId, uid);
-  res.json({
-    appId: APP_ID,
-    token: token,
-    roomId: roomId
-  });
 });
+
+// 存储房间信息
+const rooms = {};
 
 io.on('connection', (socket) => {
   console.log(`玩家连接成功，ID：${socket.id}`);
@@ -68,8 +67,8 @@ io.on('connection', (socket) => {
       host: socket.id,
       gameState: null,
       config: null,
-      votes: {}, // 新增：投票状态
-      votingActive: false // 新增：是否正在投票
+      votes: {}, 
+      votingActive: false 
     };
     socket.join(roomId);
     socket.emit('roomCreated', { roomId: roomId });
@@ -107,7 +106,6 @@ io.on('connection', (socket) => {
     if (!room || socket.id !== room.host) return;
     room.config = config;
     io.to(roomId).emit('syncConfig', config);
-    console.log(`房间${roomId}配置已同步`);
   });
 
   // 4. 同步牌局状态
@@ -122,34 +120,16 @@ io.on('connection', (socket) => {
   socket.on('flipCard', (roomId, cardInfo) => {
     const room = rooms[roomId];
     if (!room) return;
-
-    const isHost = socket.id === room.host;
-    const player = room.players.find(p => p.id === socket.id);
-    const isMyCard = player && cardInfo.ownerSeatIndex === player.seatIndex;
-    const isCommunityCard = cardInfo.ownerSeatIndex === undefined;
-
-    if (isHost || isMyCard || isCommunityCard) {
-      io.to(roomId).emit('cardFlipped', cardInfo);
-      console.log(`房间${roomId}卡牌${cardInfo.cardId}翻牌同步成功`);
-    } else {
-      socket.emit('error', '你没有权限翻这张牌！');
-      console.log(`玩家${socket.id}尝试无权限翻牌，已拦截`);
-    }
+    io.to(roomId).emit('cardFlipped', cardInfo);
   });
 
-  // --- 新功能1：投票系统 ---
+  // 6. 投票系统
   socket.on('startVote', (roomId) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.host) return;
-    if (room.votingActive) {
-      socket.emit('error', '当前已有投票进行中');
-      return;
-    }
-
     room.votingActive = true;
     room.votes = {};
     io.to(roomId).emit('voteStarted');
-    console.log(`房间${roomId}投票已发起`);
   });
 
   socket.on('submitVote', (roomId, voteInfo) => {
@@ -159,11 +139,8 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.id === socket.id);
     if (!player) return;
 
-    // 记录投票
     room.votes[player.seatIndex] = voteInfo.approved;
-    console.log(`房间${roomId}玩家${player.seatIndex}投票：${voteInfo.approved ? '同意' : '拒绝'}`);
 
-    // 检查是否所有玩家都投票了
     if (Object.keys(room.votes).length >= room.players.length) {
       finishVote(roomId);
     }
@@ -173,7 +150,6 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room) return;
 
-    // 统计同意的玩家
     const approvedSeats = Object.keys(room.votes).filter(seat => room.votes[seat]).map(Number);
     const approved = approvedSeats.length > 0;
 
@@ -188,19 +164,16 @@ io.on('connection', (socket) => {
           io.to(roomId).emit('cardFlipped', { cardId: card.cardId });
         }
       });
-      // 更新牌局状态
       io.to(roomId).emit('syncGameState', room.gameState);
     }
-
     console.log(`房间${roomId}投票结束，结果：${approved ? '通过' : '未通过'}`);
   }
 
-  // --- 新功能2：卡牌移动 ---
+  // 7. 卡牌移动
   socket.on('moveCard', (roomId, moveInfo) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.host) return;
 
-    // 更新牌局状态
     if (room.gameState && room.gameState.dealtCards) {
       const cardIndex = room.gameState.dealtCards.findIndex(card => card.cardId === moveInfo.cardId);
       if (cardIndex !== -1) {
@@ -209,20 +182,14 @@ io.on('connection', (socket) => {
         room.gameState.dealtCards[cardIndex].ownerSeatIndex = moveInfo.ownerSeatIndex;
       }
     }
-
-    // 同步给所有人
     io.to(roomId).emit('cardMoved', moveInfo);
-    console.log(`房间${roomId}卡牌移动：${moveInfo.cardId} -> ${moveInfo.targetId}`);
   });
 
-  // 玩家断开连接
   socket.on('disconnect', () => {
-    console.log(`玩家${socket.id}断开连接`);
+    console.log(`玩家断开连接：${socket.id}`);
   });
 });
 
-// 启动服务
 server.listen(PORT, () => {
   console.log(`✅ 后端服务已启动！运行端口：${PORT}`);
-  console.log(`✅ 语音Token接口已就绪：http://localhost:${PORT}/get-voice-token`);
 });
