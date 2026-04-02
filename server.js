@@ -3,7 +3,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
+// 替换为新的导入
+const { RtcTokenBuilder, RtcRole } = require('agora-token');
 
 const app = express();
 app.use(cors());
@@ -17,8 +18,9 @@ const io = new Server(server, {
   }
 });
 
+// 确认这两个值和声网控制台完全一致
 const APP_ID = 'b36db247620e4c78a58d146a3c602f93';
-const APP_CERTIFICATE = '6a900e035ae949b396dca185d08c632';
+const APP_CERTIFICATE = '6a900e035ae949b396dca185d08c632a';
 
 app.get('/agora-token', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -27,13 +29,15 @@ app.get('/agora-token', (req, res) => {
     return res.status(400).json({ error: '缺少频道名 channelName' });
   }
 
-  const uid = 0; 
-  const role = RtcRole.PUBLISHER; 
-  const expireTime = 86400;
+  // 修复：使用随机uid，避免0的兼容性问题
+  const uid = Math.floor(Math.random() * 1000000);
+  const role = RtcRole.PUBLISHER;
+  const expireTime = 86400; // 24小时过期
   const currentTime = Math.floor(Date.now() / 1000);
   const privilegeExpireTime = currentTime + expireTime;
 
   try {
+    // 修复：使用新的API签名
     const token = RtcTokenBuilder.buildTokenWithUid(
       APP_ID,
       APP_CERTIFICATE,
@@ -42,7 +46,7 @@ app.get('/agora-token', (req, res) => {
       role,
       privilegeExpireTime
     );
-    res.json({ token: token });
+    res.json({ token: token, uid: uid });
   } catch (err) {
     console.error('Token生成失败:', err);
     res.status(500).json({ error: 'Token生成失败' });
@@ -186,5 +190,5 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`✅ 后端服务已启动！运行端口：${PORT}`);
-  console.log(`⚠️  请确保已运行: npm install agora-access-token`);
+  console.log(`⚠️  请确保已运行: npm install`);
 });
