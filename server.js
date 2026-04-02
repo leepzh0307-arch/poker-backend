@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-// 务必执行: npm install agora-access-token
 const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 
 const app = express();
@@ -19,7 +18,7 @@ const io = new Server(server, {
 });
 
 const APP_ID = 'b36db247620e4c78a58d146a3c602f93';
-const APP_CERTIFICATE = '6a900e035ae949b396dca185d08c632a';
+const APP_CERTIFICATE = '6a900e035ae949b396dca185d08c632';
 
 app.get('/agora-token', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -120,6 +119,22 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('cardFlipped', cardInfo);
   });
 
+  socket.on('moveCard', (roomId, moveInfo) => {
+    const room = rooms[roomId];
+    if (!room || socket.id !== room.host) return;
+
+    if (room.gameState && room.gameState.dealtCards) {
+      const cardIndex = room.gameState.dealtCards.findIndex(card => card.cardId === moveInfo.cardId);
+      if (cardIndex !== -1) {
+        room.gameState.dealtCards[cardIndex].targetId = moveInfo.targetId;
+        room.gameState.dealtCards[cardIndex].isCommunity = moveInfo.isCommunity;
+        room.gameState.dealtCards[cardIndex].ownerSeatIndex = moveInfo.ownerSeatIndex;
+        room.gameState.dealtCards[cardIndex].isFlipped = true;
+      }
+    }
+    io.to(roomId).emit('cardMoved', moveInfo);
+  });
+
   socket.on('startVote', (roomId) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.host) return;
@@ -163,21 +178,6 @@ io.on('connection', (socket) => {
     }
     console.log(`房间${roomId}投票结束，结果：${approved ? '通过' : '未通过'}`);
   }
-
-  socket.on('moveCard', (roomId, moveInfo) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.host) return;
-
-    if (room.gameState && room.gameState.dealtCards) {
-      const cardIndex = room.gameState.dealtCards.findIndex(card => card.cardId === moveInfo.cardId);
-      if (cardIndex !== -1) {
-        room.gameState.dealtCards[cardIndex].targetId = moveInfo.targetId;
-        room.gameState.dealtCards[cardIndex].isCommunity = moveInfo.isCommunity;
-        room.gameState.dealtCards[cardIndex].ownerSeatIndex = moveInfo.ownerSeatIndex;
-      }
-    }
-    io.to(roomId).emit('cardMoved', moveInfo);
-  });
 
   socket.on('disconnect', () => {
     console.log(`玩家断开连接：${socket.id}`);
