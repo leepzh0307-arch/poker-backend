@@ -6,13 +6,13 @@
     "start": "node server.js"
   },
   "dependencies": {
-    // 删除旧的废弃包
-    // "agora-access-token": "^2.0.4",
-    // 替换为官方最新包
     "agora-token": "^1.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^4.22.1",
     "socket.io": "^4.8.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

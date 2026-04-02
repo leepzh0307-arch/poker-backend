@@ -2,8 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-
-// 替换为新的导入
 const { RtcTokenBuilder, RtcRole } = require('agora-token');
 
 const app = express();
@@ -18,7 +16,6 @@ const io = new Server(server, {
   }
 });
 
-// 确认这两个值和声网控制台完全一致
 const APP_ID = 'b36db247620e4c78a58d146a3c602f93';
 const APP_CERTIFICATE = '6a900e035ae949b396dca185d08c632a';
 
@@ -29,15 +26,13 @@ app.get('/agora-token', (req, res) => {
     return res.status(400).json({ error: '缺少频道名 channelName' });
   }
 
-  // 修复：使用随机uid，避免0的兼容性问题
   const uid = Math.floor(Math.random() * 1000000);
   const role = RtcRole.PUBLISHER;
-  const expireTime = 86400; // 24小时过期
+  const expireTime = 86400;
   const currentTime = Math.floor(Date.now() / 1000);
   const privilegeExpireTime = currentTime + expireTime;
 
   try {
-    // 修复：使用新的API签名
     const token = RtcTokenBuilder.buildTokenWithUid(
       APP_ID,
       APP_CERTIFICATE,
@@ -139,50 +134,6 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('cardMoved', moveInfo);
   });
 
-  socket.on('startVote', (roomId) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.host) return;
-    room.votingActive = true;
-    room.votes = {};
-    io.to(roomId).emit('voteStarted');
-  });
-
-  socket.on('submitVote', (roomId, voteInfo) => {
-    const room = rooms[roomId];
-    if (!room || !room.votingActive) return;
-
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-
-    room.votes[player.seatIndex] = voteInfo.approved;
-
-    if (Object.keys(room.votes).length >= room.players.length) {
-      finishVote(roomId);
-    }
-  });
-
-  function finishVote(roomId) {
-    const room = rooms[roomId];
-    if (!room) return;
-
-    const approvedSeats = Object.keys(room.votes).filter(seat => room.votes[seat]).map(Number);
-    const approved = approvedSeats.length > 0;
-
-    room.votingActive = false;
-    io.to(roomId).emit('voteResult', { approved: approved, approvedSeats: approvedSeats });
-
-    if (approved && room.gameState && room.gameState.dealtCards) {
-      room.gameState.dealtCards.forEach(card => {
-        if (!card.isCommunity && approvedSeats.includes(card.ownerSeatIndex)) {
-          card.isFlipped = true;
-          io.to(roomId).emit('cardFlipped', { cardId: card.cardId });
-        }
-      });
-      io.to(roomId).emit('syncGameState', room.gameState);
-    }
-    console.log(`房间${roomId}投票结束，结果：${approved ? '通过' : '未通过'}`);
-  }
-
   socket.on('disconnect', () => {
     console.log(`玩家断开连接：${socket.id}`);
   });
@@ -190,5 +141,4 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`✅ 后端服务已启动！运行端口：${PORT}`);
-  console.log(`⚠️  请确保已运行: npm install`);
 });
